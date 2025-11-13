@@ -7,6 +7,7 @@ import statistics, datetime, gspread, unicodedata, re
 from google.oauth2.service_account import Credentials
 import os
 import json
+from flask import Flask, request
 
 # ==========================
 # --- CONFIGURATION BOT ---
@@ -315,4 +316,50 @@ async def route_message(update: Update, context: CallbackContext):
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_message))
 
 print("✅ CinéChocs Bot connecté à Google Sheets et prêt à fonctionner !")
-app.run_polling()
+
+
+# --- après la création de `app = ApplicationBuilder().token(TOKEN).build()` et ajout des handlers ---
+# NE plus appeler app.run_polling()
+
+# Flask app pour Render
+flask_app = Flask(__name__)
+
+PORT = int(os.environ.get("PORT", 5000))              # Render fournit PORT
+SERVICE_URL = os.environ.get("SERVICE_URL", "")       # ex: "your-service.onrender.com"
+TOKEN = os.environ.get("TOKEN")                       # déjà utilisé ailleurs
+
+# route pour Telegram webhook
+@flask_app.route(f"/{TOKEN}", methods=["POST"])
+def telegram_webhook():
+    # telegram ext Application peut traiter raw update
+    update = request.get_data(as_text=True)
+    # utiliser la méthode de l'application pour traiter l'update
+    from telegram import Update
+    import json
+    upd = Update.de_json(json.loads(update), app.bot)
+    # traiter l'update via dispatch
+    import asyncio
+    asyncio.get_event_loop().create_task(app.update_queue.put(upd))
+    return "OK", 200
+
+if __name__ == "__main__":
+    # Configure le webhook auprès de Telegram (une seule fois au démarrage)
+    if not SERVICE_URL:
+        print("ERROR: SERVICE_URL env var not set (ex: your-service.onrender.com)")
+    else:
+        webhook_url = f"https://{SERVICE_URL}/{TOKEN}"
+        # use application bot to set webhook
+        app.bot.set_webhook(webhook_url)
+
+    # Start the python-telegram-bot Application (non-blocking) and the Flask app
+    # Lancement de l'application PTB (start without polling)
+    import threading
+    def run_app():
+        app.run_polling(stop_signals=())  # won't be used, but ensures dispatcher started
+    # instead we'll start the PTB in background using .start()
+    from threading import Thread
+    Thread(target=app.start).start()
+
+    # Lancer Flask (serveur intégré Render s'attend à ce que l'application écoute sur PORT)
+    flask_app.run(host="0.0.0.0", port=PORT)
+
