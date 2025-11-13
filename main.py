@@ -5,12 +5,12 @@ from telegram.ext import (
 )
 import statistics, datetime, gspread, unicodedata, re
 from google.oauth2.service_account import Credentials
-
+import os
 # ==========================
 # --- CONFIGURATION BOT ---
 # ==========================
-TOKEN = "8034061936:AAEkmdRh0d3UPKUro2AnAYk_-lzLih7DrGk"
-CHANNEL_ID = "-1003485254003"
+TOKEN = os.environ.get("TOKEN")
+CHANNEL_ID = os.environ.get("CHANNEL_ID")
 
 # ==========================
 # --- GOOGLE SHEETS CONFIG ---
