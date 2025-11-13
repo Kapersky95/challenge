@@ -1,27 +1,16 @@
-import os
-import json
-import re
-import unicodedata
-import datetime
-import statistics
-from flask import Flask, request
-
-import gspread
-from google.oauth2.service_account import Credentials
-
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters, ContextTypes
+    ContextTypes, MessageHandler, filters, CallbackContext
 )
-import asyncio
+import statistics, datetime, gspread, unicodedata, re
+from google.oauth2.service_account import Credentials
 
 # ==========================
 # --- CONFIGURATION BOT ---
 # ==========================
-TOKEN = os.environ.get("TOKEN")
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", 0))
-SERVICE_URL = os.environ.get("SERVICE_URL")  # ex: yourservice.onrender.com
+TOKEN = "8034061936:AAEkmdRh0d3UPKUro2AnAYk_-lzLih7DrGk"
+CHANNEL_ID = "-1003485254003"
 
 # ==========================
 # --- GOOGLE SHEETS CONFIG ---
@@ -31,15 +20,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds_info = json.loads(os.environ['GOOGLE_APPLICATION_CREDENTIALS_JSON'])
-creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet = client.open("CineChocs_Notes").worksheet("Notes")
 
 # ==========================
 # --- VARIABLES GLOBALES ---
 # ==========================
-films = {}
+films = {}  # stockage local des films et votes
 concours_en_cours = False
 film_concours = None
 phrase_concours = ""
@@ -51,6 +39,7 @@ top3_films = []
 # --- FONCTIONS UTILES ---
 # ==========================
 def normalize(text: str) -> str:
+    """Normalise une chaîne pour comparaison robuste"""
     if not isinstance(text, str):
         return ""
     s = text.strip()
@@ -61,21 +50,27 @@ def normalize(text: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s.strip().lower()
 
+
 def archiver_films(films_a_archiver):
+    """Déplace les films sélectionnés vers la feuille Archives"""
     archive_sheet = client.open("CineChocs_Notes").worksheet("Archives")
     all_rows = sheet.get_all_records()
     rows_to_keep = []
     for row in all_rows:
         if row['Film'] in films_a_archiver:
+            # On envoie cette ligne vers Archives
             archive_sheet.append_row([row['Date'], row['Film'], row['Note'], row['Utilisateur'], row['ID_Telegram']])
         else:
             rows_to_keep.append(row)
+    # Réécrit la feuille principale sans les films archivés
     sheet.clear()
     sheet.append_row(["Date", "Film", "Note", "Utilisateur", "ID_Telegram"])
     for r in rows_to_keep:
         sheet.append_row([r['Date'], r['Film'], r['Note'], r['Utilisateur'], r['ID_Telegram']])
 
+
 async def get_top3():
+    """Récupère le top 3 des films encore non archivés depuis la variable locale 'films'"""
     if not films:
         return []
     film_moyennes = []
@@ -96,15 +91,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# --- POST FILM ---
 async def postfilm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        await context.bot.send_message(chat_id=CHANNEL_ID, text="⚠️ Utilise : /postfilm <nom du film>")
+        await context.bot.send_message(chat_id=CHANNEL_ID, text="⚠️ Utilise comme ceci : /postfilm <nom du film>")
         return
+
     film_name = " ".join(context.args)
     films.setdefault(film_name, [])
+
     keyboard = [[
-        InlineKeyboardButton(f"⭐{i}", callback_data=f"rate|{film_name}|{i}") for i in range(1,6)
+        InlineKeyboardButton("⭐1", callback_data=f"rate|{film_name}|1"),
+        InlineKeyboardButton("⭐2", callback_data=f"rate|{film_name}|2"),
+        InlineKeyboardButton("⭐3", callback_data=f"rate|{film_name}|3"),
+        InlineKeyboardButton("⭐4", callback_data=f"rate|{film_name}|4"),
+        InlineKeyboardButton("⭐5", callback_data=f"rate|{film_name}|5")
     ]]
+
     await context.bot.send_message(
         chat_id=CHANNEL_ID,
         text=f"🎬 *{film_name}*\nDonne ta note sur 5 étoiles 👇",
@@ -112,28 +115,42 @@ async def postfilm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# --- GESTION DES VOTES ---
 async def rate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
     await query.answer()
+
     _, film, note = query.data.split("|")
     note = int(note)
     films.setdefault(film, [])
+
     if any(v['user_id'] == user.id for v in films[film]):
         await query.answer("❌ Tu as déjà voté pour ce film !", show_alert=True)
         return
+
     films[film].append({"user_id": user.id, "note": note})
     notes = [v['note'] for v in films[film]]
     avg = statistics.mean(notes)
     votes = len(notes)
+
     sheet.append_row([datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), film, note, user.full_name, user.id])
-    keyboard = [[InlineKeyboardButton(f"⭐{i}", callback_data=f"rate|{film}|{i}") for i in range(1,6)]]
+
+    keyboard = [[
+        InlineKeyboardButton("⭐1", callback_data=f"rate|{film}|1"),
+        InlineKeyboardButton("⭐2", callback_data=f"rate|{film}|2"),
+        InlineKeyboardButton("⭐3", callback_data=f"rate|{film}|3"),
+        InlineKeyboardButton("⭐4", callback_data=f"rate|{film}|4"),
+        InlineKeyboardButton("⭐5", callback_data=f"rate|{film}|5")
+    ]]
+
     await query.edit_message_text(
         f"🎬 *{film}*\n⭐ Moyenne : {avg:.1f}/5 ({votes} votes)",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# --- CLASSEMENT ---
 async def classement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top3 = await get_top3()
     if not top3:
@@ -143,7 +160,6 @@ async def classement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, film in enumerate(top3, 1):
         classement_text += f"{i}. {film['Film']} — ⭐{film['Note']}\n"
     await context.bot.send_message(chat_id=CHANNEL_ID, text=classement_text, parse_mode="Markdown")
-
 
 # ==========================
 # --- CONCOURS DU MOIS ---
@@ -272,13 +288,12 @@ async def cancel_concours(update: Update, context: CallbackContext):
 # --- LANCEMENT DU BOT ---
 # ==========================
 app = ApplicationBuilder().token(TOKEN).build()
+
+# Commandes
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("postfilm", postfilm))
 app.add_handler(CommandHandler("classement", classement))
 app.add_handler(CallbackQueryHandler(rate_callback, pattern="^rate"))
-
-
-# Commandes
 app.add_handler(CommandHandler("concours", start_concours))
 app.add_handler(CommandHandler("phrase", set_phrase))
 app.add_handler(CommandHandler("cancel", cancel_concours))
@@ -297,24 +312,4 @@ async def route_message(update: Update, context: CallbackContext):
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_message))
 
 print("✅ CinéChocs Bot connecté à Google Sheets et prêt à fonctionner !")
-
-
-# Flask pour webhook
-flask_app = Flask(__name__)
-
-@flask_app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, application.bot)
-    asyncio.get_event_loop().create_task(application.update_queue.put(update))
-    return "OK", 200
-
-@flask_app.route("/")
-def index():
-    return "Bot Telegram en ligne !", 200
-
-if __name__ == "__main__":
-    if SERVICE_URL:
-        application.bot.set_webhook(f"https://{SERVICE_URL}/{TOKEN}")
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
+app.run_polling()
