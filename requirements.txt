@@ -1,5 +1,4 @@
 python-telegram-bot==22.5
 gspread==6.2.1
 google-auth==2.23.0
-Flask==2.3.3
-gunicorn==21.2.0
+

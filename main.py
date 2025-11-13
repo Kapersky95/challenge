@@ -5,6 +5,8 @@ from telegram.ext import (
 )
 import statistics, datetime, gspread, unicodedata, re
 from google.oauth2.service_account import Credentials
+import json, os
+
 
 # ==========================
 # --- CONFIGURATION BOT ---
@@ -20,7 +22,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+
+
+credentials_info = json.loads(os.getenv("CREDENTIALS_JSON"))
+creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet = client.open("CineChocs_Notes").worksheet("Notes")
 
