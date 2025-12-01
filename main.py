@@ -90,9 +90,11 @@ async def get_top3():
 # ==========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Bienvenue sur *CinéChocs Challenge Bot !*\n\n"
-        "🎬 Tu pourras voter pour des films et participer aux concours mensuels.\n\n"
-        "👉 Reste connecté pour le prochain challenge !",
+        "👋 *Bienvenue sur CinéChocsBot !*\n\n"
+        "🎬 Participez au jeu concours du mois en répondant correctement au quiz.\n\n"
+        "🎁 Récompense : *un dépôt Mobile Money* pour les gagnants !\n\n"
+        "🏆 Les *2 premiers* à donner la bonne réponse remportent le jeu du mois.\n\n"
+        "Bonne chance, et que le meilleur gagne !\n\n🎉",
         parse_mode="Markdown"
     )
 
@@ -161,9 +163,9 @@ async def classement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not top3:
         await context.bot.send_message(chat_id=CHANNEL_ID, text="📊 Aucun film noté pour le moment.")
         return
-    classement_text = "🏆 *Classement actuel des films :*\n\n"
+    classement_text = "🏆 *Classement actuel des films du mois :*\n\n"
     for i, film in enumerate(top3, 1):
-        classement_text += f"{i}. {film['Film']} — ⭐{film['Note']}\n"
+        classement_text += f"*{i}*. *{film['Film']}* — ⭐*{film['Note']}*\n"
     await context.bot.send_message(chat_id=CHANNEL_ID, text=classement_text, parse_mode="Markdown")
 
 # ==========================
@@ -176,10 +178,10 @@ async def start_concours(update: Update, context: CallbackContext):
         await context.bot.send_message(chat_id=CHANNEL_ID, text="📊 Aucun film pour lancer le concours.")
         return
 
-    classement_text = "🏆 Sélection des 3 meilleurs films pour le concours 🏆\n\n"
+    classement_text = "🏆 *Sélection des 3 meilleurs films pour le concours* 🏆\n\n"
     for i, film in enumerate(top3_films, 1):
-        classement_text += f"{i}. {film['Film']} — ⭐{film['Note']}\n"
-    classement_text += "\n✅ Réponds avec le numéro du film choisi."
+        classement_text += f"*{i}*. *{film['Film']}* — ⭐*{film['Note']}*\n"
+    classement_text += "\n✅ Choisi le numéro du film pour le quiz."
     await update.message.reply_text(classement_text, parse_mode="Markdown")
 
     selection_en_cours = True
@@ -194,8 +196,8 @@ async def choose_film(update: Update, context: CallbackContext):
         if 1 <= choix <= len(top3_films):
             film_concours = top3_films[choix-1]['Film']
             await update.message.reply_text(
-                f"✅ Film choisi : {film_concours}\n"
-                f"Maintenant, envoie la phrase du concours avec /phrase <texte>"
+                f"✅ Film choisi pour le quiz : *{film_concours}*\n"
+                f"Maintenant, envoi le quiz du concours avec /phrase <texte>"
             )
             selection_en_cours = False
         else:
@@ -219,10 +221,10 @@ async def set_phrase(update: Update, context: CallbackContext):
     await context.bot.send_message(
         chat_id=CHANNEL_ID,
         text=(
-            f"🎬 **CHALLENGE CINECHOCS DU MOIS !** 🎬\n\n"
-            f"Essaie de trouver le film correspondant à cette phrase :\n\n"
+            f"🎬🎉*Lancement Officiel du Concours CinéChocs du mois !*🎬✨\n\n"
+            f"Donner la réponse à la question suivante:\n\n"
             f"🗣️ _« {phrase_concours} »_\n\n"
-            f"Les 2 premiers à répondre correctement en **privé** au bot remportent un dépôt Mobile Money 💸 !"
+            f"Les 2 premiers à répondre correctement dans le *CinéChocsBot* remportent un dépôt Mobile Money 💸 !"
         ),
         parse_mode="Markdown",
         reply_markup=reply_markup
@@ -241,7 +243,7 @@ async def handle_response_private(update: Update, context: CallbackContext):
     reponse = raw_reponse.strip()
 
     if user.id in [g['id'] for g in gagnants]:
-        await update.message.reply_text("⚠️ Tu as déjà répondu au concours. Ta réponse est finale !")
+        await update.message.reply_text("⚠️ Tu as déjà répondu au concours. Ta réponse est définitive !")
         return
 
     normalized_response = normalize(reponse)
@@ -266,13 +268,14 @@ async def handle_response_private(update: Update, context: CallbackContext):
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=(
-                    f"🏁 Le challenge est terminé !\n\n"
+                    f"🏁 *Le Concours CinéChocs du mois est terminé !*\n\n"
+                    f"Voici nos grands gagnants de ce mois :\n"
                     f"🥇 @{gagnants[0]['username']}\n"
                     f"🥈 @{gagnants[1]['username']}\n\n"
-                    f"🎥 Film mystère : *{film_concours}*\n"
-                    f"💬 Phrase : _« {phrase_concours} »_\n\n"
-                    f"📅 Prochain concours : {date_next}\n"
-                    f"Merci à tous ! 🙌"
+                    f"💬 Quiz du jeu : _« {phrase_concours} »_\n"
+                    f"🎥 Film mystère : *{film_concours}*\n\n"
+                    f"📅 Prochain concours : {date_next}\n\n"
+                    f"*Merci à tous pour votre participation !* 🙌"
                 ),
                 parse_mode="Markdown"
             )
