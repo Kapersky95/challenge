@@ -320,4 +320,23 @@ async def route_message(update: Update, context: CallbackContext):
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_message))
 
 print("✅ CinéChocs Bot connecté à Google Sheets et prêt à fonctionner !")
-app.run_polling()
+import threading
+from flask import Flask
+
+# --- Mini serveur web pour Railway ---
+server = Flask(__name__)
+
+@server.route("/")
+def home():
+    return "CinéChocsBot is running!", 200
+
+def start_bot():
+    app.run_polling()
+
+threading.Thread(target=start_bot).start()
+
+# --- Lancement du serveur Web ---
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    server.run(host="0.0.0.0", port=port)
+
