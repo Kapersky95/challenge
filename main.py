@@ -215,7 +215,7 @@ async def set_phrase(update: Update, context: CallbackContext):
     concours_en_cours = True
 
     BOT_USERNAME = "CinechocsChallengeBot"
-    keyboard = [[InlineKeyboardButton("💬 Répondre au bot", url=f"https://t.me/{BOT_USERNAME}")]]
+    keyboard = [[InlineKeyboardButton("💬 Répondre au CinéChocsBot", url=f"https://t.me/{BOT_USERNAME}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await context.bot.send_message(
@@ -223,8 +223,8 @@ async def set_phrase(update: Update, context: CallbackContext):
         text=(
             f"🎉 *Lancement Officiel du Concours CinéChocs du mois !* 🎬✨\n\n"
             f"Donner la réponse à la question suivante:\n\n"
-            f"🗣️ _« *{phrase_concours}* »_\n\n"
-            f"Les 2 premiers à répondre correctement dans le *CinéChocsBot* remportent un dépôt Mobile Money 💸 !"
+            f"🗣️ _« {phrase_concours} »_\n\n"
+            f"Les *2 premiers* à répondre correctement au *CinéChocsBot* remportent un dépôt Mobile Money 💰 !"
         ),
         parse_mode="Markdown",
         reply_markup=reply_markup
