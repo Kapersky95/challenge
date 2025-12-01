@@ -196,7 +196,7 @@ async def choose_film(update: Update, context: CallbackContext):
         if 1 <= choix <= len(top3_films):
             film_concours = top3_films[choix-1]['Film']
             await update.message.reply_text(
-                f"✅ Film choisi pour le quiz : *{film_concours}*\n"
+                f"✅ Voici le film choisi pour le quiz : {film_concours}\n"
                 f"Maintenant, envoi le quiz du concours avec /phrase <texte>"
             )
             selection_en_cours = False
@@ -221,9 +221,9 @@ async def set_phrase(update: Update, context: CallbackContext):
     await context.bot.send_message(
         chat_id=CHANNEL_ID,
         text=(
-            f"🎬🎉*Lancement Officiel du Concours CinéChocs du mois !*🎬✨\n\n"
+            f"🎉 *Lancement Officiel du Concours CinéChocs du mois !* 🎬✨\n\n"
             f"Donner la réponse à la question suivante:\n\n"
-            f"🗣️ _« {phrase_concours} »_\n\n"
+            f"🗣️ _« *{phrase_concours}* »_\n\n"
             f"Les 2 premiers à répondre correctement dans le *CinéChocsBot* remportent un dépôt Mobile Money 💸 !"
         ),
         parse_mode="Markdown",
@@ -268,8 +268,8 @@ async def handle_response_private(update: Update, context: CallbackContext):
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=(
-                    f"🏁 *Le Concours CinéChocs du mois est terminé !*\n\n"
-                    f"Voici nos grands gagnants de ce mois :\n"
+                    f"🏁 *Le Concours CinéChocs du mois est terminé ! ✅*\n\n"
+                    f"Voici nos heureux gagnants de ce mois :\n"
                     f"🥇 @{gagnants[0]['username']}\n"
                     f"🥈 @{gagnants[1]['username']}\n\n"
                     f"💬 Quiz du jeu : _« {phrase_concours} »_\n"
