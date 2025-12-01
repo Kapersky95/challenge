@@ -1,17 +1,24 @@
+import os
+import json
+import threading
+import statistics
+import datetime
+import gspread
+import unicodedata
+import re
+
+from flask import Flask
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     ContextTypes, MessageHandler, filters, CallbackContext
 )
-import statistics, datetime, gspread, unicodedata, re
-from google.oauth2.service_account import Credentials
-import json, os
-
 
 # ==========================
 # --- CONFIGURATION BOT ---
 # ==========================
-TOKEN = "8034061936:AAEkmdRh0d3UPKUro2AnAYk_-lzLih7DrGk"
+TOKEN = os.getenv("BOT_TOKEN")   # ← Railway variable
 CHANNEL_ID = "-1003485254003"
 
 # ==========================
@@ -22,8 +29,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-
-
 credentials_info = json.loads(os.getenv("CREDENTIALS_JSON"))
 creds = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
 client = gspread.authorize(creds)
@@ -32,7 +37,7 @@ sheet = client.open("CineChocs_Notes").worksheet("Notes")
 # ==========================
 # --- VARIABLES GLOBALES ---
 # ==========================
-films = {}  # stockage local des films et votes
+films = {}
 concours_en_cours = False
 film_concours = None
 phrase_concours = ""
@@ -44,7 +49,6 @@ top3_films = []
 # --- FONCTIONS UTILES ---
 # ==========================
 def normalize(text: str) -> str:
-    """Normalise une chaîne pour comparaison robuste"""
     if not isinstance(text, str):
         return ""
     s = text.strip()
@@ -55,33 +59,28 @@ def normalize(text: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s.strip().lower()
 
-
 def archiver_films(films_a_archiver):
-    """Déplace les films sélectionnés vers la feuille Archives"""
     archive_sheet = client.open("CineChocs_Notes").worksheet("Archives")
     all_rows = sheet.get_all_records()
     rows_to_keep = []
     for row in all_rows:
         if row['Film'] in films_a_archiver:
-            # On envoie cette ligne vers Archives
             archive_sheet.append_row([row['Date'], row['Film'], row['Note'], row['Utilisateur'], row['ID_Telegram']])
         else:
             rows_to_keep.append(row)
-    # Réécrit la feuille principale sans les films archivés
+
     sheet.clear()
     sheet.append_row(["Date", "Film", "Note", "Utilisateur", "ID_Telegram"])
     for r in rows_to_keep:
         sheet.append_row([r['Date'], r['Film'], r['Note'], r['Utilisateur'], r['ID_Telegram']])
 
-
 async def get_top3():
-    """Récupère le top 3 des films encore non archivés depuis la variable locale 'films'"""
     if not films:
         return []
     film_moyennes = []
     for f, notes in films.items():
         if notes:
-            film_moyennes.append({"Film": f, "Note": round(statistics.mean([v['note'] for v in notes]),1)})
+            film_moyennes.append({"Film": f, "Note": round(statistics.mean([v['note'] for v in notes]), 1)})
     film_moyennes.sort(key=lambda x: x['Note'], reverse=True)
     return film_moyennes[:3]
 
@@ -94,11 +93,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎬 Participez au jeu concours du mois en répondant correctement au quiz.\n\n"
         "🎁 Récompense : *un dépôt Mobile Money* pour les gagnants !\n\n"
         "🏆 Les *2 premiers* à donner la bonne réponse remportent le jeu du mois.\n\n"
-        "Bonne chance, et que le meilleur gagne !\n\n🎉",
+        "Bonne chance, et que le meilleur gagne ! 🎉",
         parse_mode="Markdown"
     )
 
-# --- POST FILM ---
 async def postfilm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
         await context.bot.send_message(chat_id=CHANNEL_ID, text="⚠️ Utilise comme ceci : /postfilm <nom du film>")
@@ -112,17 +110,16 @@ async def postfilm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("⭐2", callback_data=f"rate|{film_name}|2"),
         InlineKeyboardButton("⭐3", callback_data=f"rate|{film_name}|3"),
         InlineKeyboardButton("⭐4", callback_data=f"rate|{film_name}|4"),
-        InlineKeyboardButton("⭐5", callback_data=f"rate|{film_name}|5")
+        InlineKeyboardButton("⭐5", callback_data=f"rate|{film_name}|5"),
     ]]
 
     await context.bot.send_message(
         chat_id=CHANNEL_ID,
         text=f"🎬 *{film_name}*\nDonne ta note sur 5 étoiles 👇",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-# --- GESTION DES VOTES ---
 async def rate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user
@@ -130,6 +127,7 @@ async def rate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _, film, note = query.data.split("|")
     note = int(note)
+
     films.setdefault(film, [])
 
     if any(v['user_id'] == user.id for v in films[film]):
@@ -148,16 +146,15 @@ async def rate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("⭐2", callback_data=f"rate|{film}|2"),
         InlineKeyboardButton("⭐3", callback_data=f"rate|{film}|3"),
         InlineKeyboardButton("⭐4", callback_data=f"rate|{film}|4"),
-        InlineKeyboardButton("⭐5", callback_data=f"rate|{film}|5")
+        InlineKeyboardButton("⭐5", callback_data=f"rate|{film}|5"),
     ]]
 
     await query.edit_message_text(
         f"🎬 *{film}*\n⭐ Moyenne : {avg:.1f}/5 ({votes} votes)",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-# --- CLASSEMENT ---
 async def classement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     top3 = await get_top3()
     if not top3:
@@ -168,11 +165,12 @@ async def classement(update: Update, context: ContextTypes.DEFAULT_TYPE):
         classement_text += f"*{i}*. *{film['Film']}* — ⭐*{film['Note']}*\n"
     await context.bot.send_message(chat_id=CHANNEL_ID, text=classement_text, parse_mode="Markdown")
 
-# ==========================
-# --- CONCOURS DU MOIS ---
-# ==========================
+# ======================================================
+#                 CONCOURS DU MOIS
+# ======================================================
 async def start_concours(update: Update, context: CallbackContext):
     global selection_en_cours, top3_films, gagnants, concours_en_cours
+
     top3_films = await get_top3()
     if not top3_films:
         await context.bot.send_message(chat_id=CHANNEL_ID, text="📊 Aucun film pour lancer le concours.")
@@ -181,6 +179,7 @@ async def start_concours(update: Update, context: CallbackContext):
     classement_text = "🏆 *Sélection des 3 meilleurs films pour le concours* 🏆\n\n"
     for i, film in enumerate(top3_films, 1):
         classement_text += f"*{i}*. *{film['Film']}* — ⭐*{film['Note']}*\n"
+
     classement_text += "\n✅ Choisi le numéro du film pour le quiz."
     await update.message.reply_text(classement_text, parse_mode="Markdown")
 
@@ -188,16 +187,17 @@ async def start_concours(update: Update, context: CallbackContext):
     gagnants = []
     concours_en_cours = False
 
-# --- CHOIX DU FILM ---
 async def choose_film(update: Update, context: CallbackContext):
     global film_concours, selection_en_cours
+
     try:
         choix = int(update.message.text.strip())
         if 1 <= choix <= len(top3_films):
-            film_concours = top3_films[choix-1]['Film']
+            film_concours = top3_films[choix - 1]['Film']
             await update.message.reply_text(
                 f"✅ Film choisi pour le quiz : *{film_concours}*\n"
-                f"Maintenant, envoi le quiz du concours avec /phrase <texte>"
+                f"Maintenant, envoi le quiz du concours avec /phrase <texte>",
+                parse_mode="Markdown"
             )
             selection_en_cours = False
         else:
@@ -205,12 +205,13 @@ async def choose_film(update: Update, context: CallbackContext):
     except ValueError:
         await update.message.reply_text("⚠️ Entre le numéro correspondant au film choisi.")
 
-# --- PHRASE DU CONCOURS ---
 async def set_phrase(update: Update, context: CallbackContext):
     global phrase_concours, concours_en_cours
+
     if len(context.args) == 0:
         await update.message.reply_text("⚠️ Utilisation : /phrase <texte de la phrase>")
         return
+
     phrase_concours = " ".join(context.args)
     concours_en_cours = True
 
@@ -224,13 +225,13 @@ async def set_phrase(update: Update, context: CallbackContext):
             f"🎬🎉*Lancement Officiel du Concours CinéChocs du mois !*🎬✨\n\n"
             f"Donner la réponse à la question suivante:\n\n"
             f"🗣️ _« {phrase_concours} »_\n\n"
-            f"Les 2 premiers à répondre correctement dans le *CinéChocsBot* remportent un dépôt Mobile Money 💸 !"
+            f"Les 2 premiers à répondre correctement dans le *CinéChocsBot* "
+            f"remportent un dépôt Mobile Money 💸 !"
         ),
         parse_mode="Markdown",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
     )
 
-# --- RÉPONSES PARTICIPANTS ---
 async def handle_response_private(update: Update, context: CallbackContext):
     global concours_en_cours, film_concours, gagnants
 
@@ -258,10 +259,13 @@ async def handle_response_private(update: Update, context: CallbackContext):
 
     if is_correct:
         correct_count = len([g for g in gagnants if normalize(g['reponse']) == normalized_answer])
+
         if correct_count == 1:
             await update.message.reply_text("🎉 Bravo ! Tu es le 1er gagnant 🥇")
+
         elif correct_count == 2:
             await update.message.reply_text("🎉 Bravo ! Tu es le 2ᵉ gagnant 🥈")
+
             concours_en_cours = False
             date_next = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime("%d %B %Y")
 
@@ -269,10 +273,10 @@ async def handle_response_private(update: Update, context: CallbackContext):
                 chat_id=CHANNEL_ID,
                 text=(
                     f"🏁 *Le Concours CinéChocs du mois est terminé !*\n\n"
-                    f"Voici nos grands gagnants de ce mois :\n"
+                    f"Voici nos grands gagnants :\n"
                     f"🥇 @{gagnants[0]['username']}\n"
                     f"🥈 @{gagnants[1]['username']}\n\n"
-                    f"💬 Quiz du jeu : _« {phrase_concours} »_\n"
+                    f"💬 Quiz : _« {phrase_concours} »_\n"
                     f"🎥 Film mystère : *{film_concours}*\n\n"
                     f"📅 Prochain concours : {date_next}\n\n"
                     f"*Merci à tous pour votre participation !* 🙌"
@@ -280,63 +284,67 @@ async def handle_response_private(update: Update, context: CallbackContext):
                 parse_mode="Markdown"
             )
 
-            # Archiver les films utilisés pour ce challenge
             archiver_films(list(films.keys()))
             films.clear()
     else:
         await update.message.reply_text("❌ Mauvaise réponse, mais bien essayé !")
 
-# --- ANNULATION DU CONCOURS ---
 async def cancel_concours(update: Update, context: CallbackContext):
     global concours_en_cours
     concours_en_cours = False
     await context.bot.send_message(chat_id=CHANNEL_ID, text="❌ Le concours en cours a été annulé.")
 
 # ==========================
-# --- LANCEMENT DU BOT ---
+# --- ROUTAGE DES MESSAGES ---
 # ==========================
-app = ApplicationBuilder().token(TOKEN).build()
-
-# Commandes
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("postfilm", postfilm))
-app.add_handler(CommandHandler("classement", classement))
-app.add_handler(CallbackQueryHandler(rate_callback, pattern="^rate"))
-app.add_handler(CommandHandler("concours", start_concours))
-app.add_handler(CommandHandler("phrase", set_phrase))
-app.add_handler(CommandHandler("cancel", cancel_concours))
-
-# Route dynamique
 async def route_message(update: Update, context: CallbackContext):
     global selection_en_cours, concours_en_cours
+
     if selection_en_cours and update.message.text.isdigit():
         await choose_film(update, context)
         return
+
     if concours_en_cours:
         await handle_response_private(update, context)
         return
+
     await update.message.reply_text("ℹ️ Aucune action en cours actuellement.")
 
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_message))
+# ==========================
+# --- APPLICATION BOT ---
+# ==========================
+bot_app = ApplicationBuilder().token(TOKEN).build()
 
-print("✅ CinéChocs Bot connecté à Google Sheets et prêt à fonctionner !")
-import threading
-from flask import Flask
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("postfilm", postfilm))
+bot_app.add_handler(CommandHandler("classement", classement))
+bot_app.add_handler(CallbackQueryHandler(rate_callback, pattern="^rate"))
+bot_app.add_handler(CommandHandler("concours", start_concours))
+bot_app.add_handler(CommandHandler("phrase", set_phrase))
+bot_app.add_handler(CommandHandler("cancel", cancel_concours))
+bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, route_message))
 
-# --- Mini serveur web pour Railway ---
+print("🤖 CinéChocs Bot connecté et prêt à fonctionner !")
+
+# ==========================
+# --- POLLING THREAD ---
+# ==========================
+def start_polling():
+    bot_app.run_polling()
+
+# ==========================
+# --- SERVEUR WEB RAILWAY ---
+# ==========================
 server = Flask(__name__)
 
 @server.route("/")
 def home():
-    return "CinéChocsBot is running!", 200
+    return "CinéChocsBot is running on Railway!", 200
 
-def start_bot():
-    app.run_polling()
-
-threading.Thread(target=start_bot).start()
-
-# --- Lancement du serveur Web ---
+# ==========================
+# --- MAIN ---
+# ==========================
 if __name__ == "__main__":
+    threading.Thread(target=start_polling).start()
     port = int(os.environ.get("PORT", 8080))
     server.run(host="0.0.0.0", port=port)
-
