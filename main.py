@@ -91,10 +91,10 @@ async def get_top3():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 *Bienvenue sur CinéChocsBot !*\n\n"
-        "🎬 Participez au jeu concours du mois en répondant correctement au quiz.\n\n"
+        "🎬 Participez au *jeu concours du mois* en répondant correctement au quiz.\n\n"
         "🎁 Récompense : *un dépôt Mobile Money* pour les gagnants !\n\n"
         "🏆 Les *2 premiers* à donner la bonne réponse remportent le jeu du mois.\n\n"
-        "Bonne chance, et que le meilleur gagne !\n\n🎉",
+        "*Bonne chance, et que le meilleur gagne !*🎉",
         parse_mode="Markdown"
     )
 
